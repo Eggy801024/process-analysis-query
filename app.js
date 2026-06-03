@@ -1,3 +1,60 @@
+const USERS = {
+    "P1339": "P1339",
+    "P0949": "P0949"
+};
+
+function showLogin(){
+    const loginPage = document.getElementById("loginPage");
+    const appPage = document.getElementById("appPage");
+    if(loginPage) loginPage.style.display = "flex";
+    if(appPage) appPage.style.display = "none";
+}
+
+function showApp(user){
+    const loginPage = document.getElementById("loginPage");
+    const appPage = document.getElementById("appPage");
+    const currentUser = document.getElementById("currentUser");
+    if(loginPage) loginPage.style.display = "none";
+    if(appPage) appPage.style.display = "block";
+    if(currentUser) currentUser.textContent = user;
+}
+
+function login(){
+    const user = String(document.getElementById("loginUser").value || "").trim().toUpperCase();
+    const pass = String(document.getElementById("loginPass").value || "").trim().toUpperCase();
+    const err = document.getElementById("loginError");
+
+    if(USERS[user] && USERS[user].toUpperCase() === pass){
+        sessionStorage.setItem("processAnalysisUser", user);
+        if(err) err.style.display = "none";
+        showApp(user);
+        return;
+    }
+
+    if(err) err.style.display = "block";
+}
+
+function logout(){
+    sessionStorage.removeItem("processAnalysisUser");
+    showLogin();
+}
+
+function checkAuth(){
+    const user = sessionStorage.getItem("processAnalysisUser");
+    if(user && USERS[user]){
+        showApp(user);
+    }else{
+        showLogin();
+    }
+}
+
+document.addEventListener("keydown", function(e){
+    if(e.key === "Enter" && document.getElementById("loginPage")?.style.display !== "none"){
+        login();
+    }
+});
+
+
 const $=id=>document.getElementById(id);
 
 function norm(v){
@@ -306,3 +363,4 @@ function resetForm(){
 }
 
 init();
+checkAuth();
