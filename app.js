@@ -134,6 +134,19 @@ function uniqueValues(rows, keys) {
   return [...values].sort((a, b) => a.localeCompare(b, "zh-Hant"));
 }
 
+function mergeOptions(preferred, values) {
+  const seen = new Set();
+  const merged = [];
+  [...preferred, ...values].forEach((value) => {
+    const label = String(value || "").trim();
+    const key = clean(label);
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    merged.push(label);
+  });
+  return merged;
+}
+
 function fillSelect(id, values, firstLabel) {
   const select = $(id);
   select.innerHTML = `<option value="">${firstLabel}</option>`;
@@ -153,7 +166,8 @@ function reasonLabel(reason) {
 }
 
 function populateControls() {
-  fillSelect("line", uniqueValues(DB_RECORDS, ["線別", "Line"]), "全部");
+  const lineOptions = mergeOptions(["L1", "L3", "L4", "L5"], uniqueValues(DB_RECORDS, ["線別", "Line"]));
+  fillSelect("line", lineOptions, "全部");
   fillSelect("shift", uniqueValues(DB_RECORDS, ["班別", "Shift"]), "全部");
   fillSelect("grade", uniqueValues(DB_RECORDS, ["模組等級", "等級", "Grade"]), "全部");
 
@@ -187,7 +201,7 @@ async function syncSheets() {
       $("results").className = "empty";
       $("results").textContent = "Google Sheets 尚未填入資料。";
     } else {
-      setStatus("同步完成", `Database ${DB_RECORDS.length} 筆，MES異常代碼 ${MES_REASONS.length} 筆。`, "ok");
+      setStatus("同步完成", `Database ${DB_RECORDS.length} 筆，MES異常代碼 ${MES_REASONS.length} 筆。線別支援 L1 / L3 / L4 / L5。`, "ok");
       $("results").className = "empty";
       $("results").textContent = "選擇條件後按查詢。";
     }
