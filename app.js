@@ -65,17 +65,45 @@ function checkAuth() {
   }
 }
 
-function gvizUrl(sheetName) {
+function gvizUrl(sheetName, callbackName) {
   const sheet = encodeURIComponent(sheetName);
   const cacheBust = Date.now();
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheet}&headers=1&t=${cacheBust}`;
+  const tqx = callbackName ? `out:json;responseHandler:${callbackName}` : "out:json";
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${encodeURIComponent(tqx)}&sheet=${sheet}&headers=1&t=${cacheBust}`;
 }
 
 async function fetchSheet(sheetName) {
-  const response = await fetch(gvizUrl(sheetName));
-  if (!response.ok) throw new Error(`${sheetName} 讀取失敗`);
-  const raw = await response.text();
-  const json = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+  const callbackName = `__sheetCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const json = await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`${sheetName} 讀取逾時`));
+    }, 15000);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      delete window[callbackName];
+      script.remove();
+    }
+
+    window[callbackName] = (payload) => {
+      cleanup();
+      if (payload.status && payload.status !== "ok") {
+        reject(new Error(`${sheetName} 狀態異常：${payload.status}`));
+        return;
+      }
+      resolve(payload);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error(`${sheetName} 讀取失敗`));
+    };
+    script.src = gvizUrl(sheetName, callbackName);
+    document.body.appendChild(script);
+  });
+
   const cols = json.table.cols.map((col) => String(col.label || "").trim());
   const rows = json.table.rows || [];
 
