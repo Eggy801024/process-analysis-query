@@ -4,81 +4,76 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>製程異常分析查詢</title>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    .login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(135deg,#1d4ed8,#38bdf8)}
-    .login-card{width:100%;max-width:420px;background:#fff;border-radius:18px;padding:24px;box-shadow:0 18px 40px rgba(15,23,42,.25)}
-    .login-card h1{margin:0 0 8px;color:#14213d}
-    .login-card p{margin:0 0 18px;color:#64748b}
-    .login-card input{margin-bottom:12px}
-    .login-error{display:none;color:#dc2626;font-weight:700;margin-top:10px}
-    .topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-    .user-badge{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:8px 12px;font-weight:700}
-    .logout-btn{background:#fff;color:#1d4ed8;border:0;border-radius:999px;padding:8px 12px;font-weight:800;cursor:pointer}
-    #appPage{display:none}
-  </style>
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <div id="loginPage" class="login-page">
     <section class="login-card">
       <h1>製程異常分析系統</h1>
-      <p>請使用工號登入後查閱資料。</p>
-      <label>工號</label>
+      <p>使用工號登入後查閱資料。</p>
+      <label for="loginUser">工號</label>
       <input id="loginUser" autocomplete="username" placeholder="例如：P1339">
-      <label>密碼</label>
+      <label for="loginPass">密碼</label>
       <input id="loginPass" type="password" autocomplete="current-password" placeholder="請輸入密碼">
       <div class="btns">
-        <button class="primary" onclick="login()">登入</button>
+        <button class="primary" id="loginBtn" type="button">登入</button>
       </div>
       <div id="loginError" class="login-error">工號或密碼錯誤</div>
     </section>
   </div>
 
-  <div id="appPage">
+  <div id="appPage" class="app-page">
     <header>
       <div class="wrap topbar">
         <div>
           <h1>製程異常分析查詢</h1>
-          <p>選擇線別、日期、班別、模組等級與降規原因後，查詢對應異常分析。</p>
+          <p>資料來源：Google Sheets 即時同步</p>
         </div>
-        <div>
-          <span class="user-badge">目前登入：<span id="currentUser">—</span></span>
-          <button class="logout-btn" onclick="logout()">登出</button>
+        <div class="account-box">
+          <span class="user-badge">目前登入：<span id="currentUser">-</span></span>
+          <button class="logout-btn" id="logoutBtn" type="button">登出</button>
         </div>
       </div>
     </header>
 
     <main class="wrap">
+      <section class="panel status-panel">
+        <div>
+          <b id="syncTitle">讀取資料中</b>
+          <span id="syncText">正在連線 Google Sheets。</span>
+        </div>
+        <button class="ghost" id="reloadBtn" type="button">重新同步</button>
+      </section>
+
       <section class="panel">
         <div class="grid">
-          <div><label>線別</label><select id="line"><option value="">全部</option><option>L4</option><option>L5</option></select></div>
-          <div><label>日期</label><input id="date" type="date"></div>
-          <div><label>班別</label><select id="shift"><option value="">全部</option><option>DA</option><option>NA</option><option>DB</option><option>NB</option></select></div>
-          <div><label>模組等級</label><select id="grade"><option value="">全部</option><option>A規</option><option>B規</option><option>C規</option><option>F規</option><option>M規</option></select></div>
-          <div><label>降規原因</label><select id="reason"><option value="">請選擇 MES 異常代碼</option></select></div>
-          <div><label>異常分析關鍵字</label><input id="keyword" placeholder="可輸入分析、現象、root cause"></div>
+          <div><label for="line">線別</label><select id="line"><option value="">全部</option></select></div>
+          <div><label for="date">日期</label><input id="date" type="date"></div>
+          <div><label for="shift">班別</label><select id="shift"><option value="">全部</option></select></div>
+          <div><label for="grade">模組等級</label><select id="grade"><option value="">全部</option></select></div>
+          <div><label for="reason">降規原因</label><select id="reason"><option value="">全部 MES 原因</option></select></div>
+          <div><label for="keyword">關鍵字</label><input id="keyword" placeholder="分析、現象、root cause、模組序號"></div>
         </div>
         <div class="btns">
-          <button class="primary" onclick="searchData()">查詢異常分析</button>
-          <button class="ghost" onclick="resetForm()">清除條件</button>
+          <button class="primary" id="searchBtn" type="button">查詢</button>
+          <button class="ghost" id="resetBtn" type="button">清除</button>
         </div>
       </section>
 
       <section class="panel summary">
         <div class="kpi"><span>資料筆數</span><b id="total">0</b></div>
         <div class="kpi"><span>符合筆數</span><b id="matched">0</b></div>
-        <div class="kpi"><span>MES原因數</span><b id="reasonCount">0</b></div>
-        <div class="kpi"><span>目前原因</span><b id="currentReason">未選擇</b></div>
+        <div class="kpi"><span>MES 原因數</span><b id="reasonCount">0</b></div>
+        <div class="kpi"><span>目前原因</span><b id="currentReason">全部</b></div>
       </section>
 
       <section class="panel">
         <h2>查詢結果</h2>
-        <div id="results" class="empty">請選擇條件後按「查詢異常分析」。</div>
+        <div id="results" class="empty">資料同步完成後即可查詢。</div>
       </section>
     </main>
   </div>
 
-  <script src="data.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

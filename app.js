@@ -1,366 +1,299 @@
+const SHEET_ID = "1uxlACZ3sXNZoTaZjEmixYCosIj-aGViXF5pJ_Z3Z2QM";
+const SHEETS = {
+  database: "Database",
+  reasons: "MES_Cold"
+};
+
 const USERS = {
-    "P1339": "P1339",
-    "P0949": "P0949"
+  P1339: "P1339",
+  P0949: "P0949"
 };
 
-function showLogin(){
-    const loginPage = document.getElementById("loginPage");
-    const appPage = document.getElementById("appPage");
-    if(loginPage) loginPage.style.display = "flex";
-    if(appPage) appPage.style.display = "none";
+let DB_RECORDS = [];
+let MES_REASONS = [];
+
+const $ = (id) => document.getElementById(id);
+
+function norm(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
-function showApp(user){
-    const loginPage = document.getElementById("loginPage");
-    const appPage = document.getElementById("appPage");
-    const currentUser = document.getElementById("currentUser");
-    if(loginPage) loginPage.style.display = "none";
-    if(appPage) appPage.style.display = "block";
-    if(currentUser) currentUser.textContent = user;
+function clean(value) {
+  return norm(value)
+    .replace(/[\s\u3000]/g, "")
+    .replace(/[\/\\\-＿_]/g, "")
+    .replace(/[()（）【】[\]{}<>《》]/g, "")
+    .replace(/[:：;；,，.。|｜+＋&＆]/g, "");
 }
 
-function login(){
-    const user = String(document.getElementById("loginUser").value || "").trim().toUpperCase();
-    const pass = String(document.getElementById("loginPass").value || "").trim().toUpperCase();
-    const err = document.getElementById("loginError");
-
-    if(USERS[user] && USERS[user].toUpperCase() === pass){
-        sessionStorage.setItem("processAnalysisUser", user);
-        if(err) err.style.display = "none";
-        showApp(user);
-        return;
-    }
-
-    if(err) err.style.display = "block";
+function showLogin() {
+  $("loginPage").style.display = "flex";
+  $("appPage").style.display = "none";
 }
 
-function logout(){
-    sessionStorage.removeItem("processAnalysisUser");
+function showApp(user) {
+  $("loginPage").style.display = "none";
+  $("appPage").style.display = "block";
+  $("currentUser").textContent = user;
+}
+
+function login() {
+  const user = String($("loginUser").value || "").trim().toUpperCase();
+  const pass = String($("loginPass").value || "").trim().toUpperCase();
+  if (USERS[user] && USERS[user].toUpperCase() === pass) {
+    sessionStorage.setItem("processAnalysisUser", user);
+    $("loginError").style.display = "none";
+    showApp(user);
+    syncSheets();
+    return;
+  }
+  $("loginError").style.display = "block";
+}
+
+function logout() {
+  sessionStorage.removeItem("processAnalysisUser");
+  showLogin();
+}
+
+function checkAuth() {
+  const user = sessionStorage.getItem("processAnalysisUser");
+  if (user && USERS[user]) {
+    showApp(user);
+    syncSheets();
+  } else {
     showLogin();
+  }
 }
 
-function checkAuth(){
-    const user = sessionStorage.getItem("processAnalysisUser");
-    if(user && USERS[user]){
-        showApp(user);
-    }else{
-        showLogin();
-    }
+function gvizUrl(sheetName) {
+  const sheet = encodeURIComponent(sheetName);
+  const cacheBust = Date.now();
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheet}&headers=1&t=${cacheBust}`;
 }
 
-document.addEventListener("keydown", function(e){
-    if(e.key === "Enter" && document.getElementById("loginPage")?.style.display !== "none"){
-        login();
+async function fetchSheet(sheetName) {
+  const response = await fetch(gvizUrl(sheetName));
+  if (!response.ok) throw new Error(`${sheetName} 讀取失敗`);
+  const raw = await response.text();
+  const json = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+  const cols = json.table.cols.map((col) => String(col.label || "").trim());
+  const rows = json.table.rows || [];
+
+  return rows.map((row) => {
+    const item = {};
+    (row.c || []).forEach((cell, index) => {
+      const key = cols[index] || `欄位${index + 1}`;
+      item[key] = cell ? (cell.f || cell.v || "") : "";
+    });
+    return item;
+  }).filter((item) => Object.values(item).some((value) => String(value).trim()));
+}
+
+function setStatus(title, text, state = "") {
+  $("syncTitle").textContent = title;
+  $("syncText").textContent = text;
+  $("syncTitle").className = state;
+}
+
+function uniqueValues(rows, keys) {
+  const values = new Set();
+  rows.forEach((row) => {
+    keys.forEach((key) => {
+      const value = row[key];
+      if (value !== undefined && String(value).trim()) values.add(String(value).trim());
+    });
+  });
+  return [...values].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+}
+
+function fillSelect(id, values, firstLabel) {
+  const select = $(id);
+  select.innerHTML = `<option value="">${firstLabel}</option>`;
+  values.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+}
+
+function reasonLabel(reason) {
+  const code = reason.異常代碼 || reason["MES代碼"] || reason["代碼"] || "";
+  const zh = reason.中文名稱 || reason.異常名稱 || reason.降規原因 || "";
+  const en = reason.英文名稱 || reason.English || "";
+  return [code, zh, en].filter(Boolean).join("｜") || Object.values(reason).filter(Boolean).join("｜");
+}
+
+function populateControls() {
+  fillSelect("line", uniqueValues(DB_RECORDS, ["線別", "Line"]), "全部");
+  fillSelect("shift", uniqueValues(DB_RECORDS, ["班別", "Shift"]), "全部");
+  fillSelect("grade", uniqueValues(DB_RECORDS, ["模組等級", "等級", "Grade"]), "全部");
+
+  const reasonSelect = $("reason");
+  reasonSelect.innerHTML = `<option value="">全部 MES 原因</option>`;
+  MES_REASONS.forEach((reason, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = reasonLabel(reason);
+    reasonSelect.appendChild(option);
+  });
+}
+
+async function syncSheets() {
+  setStatus("讀取資料中", "正在連線 Google Sheets。");
+  try {
+    const [database, reasons] = await Promise.all([
+      fetchSheet(SHEETS.database),
+      fetchSheet(SHEETS.reasons)
+    ]);
+    DB_RECORDS = database;
+    MES_REASONS = reasons;
+    populateControls();
+    $("total").textContent = DB_RECORDS.length;
+    $("reasonCount").textContent = MES_REASONS.length;
+    $("matched").textContent = "0";
+    $("currentReason").textContent = "全部";
+
+    if (!DB_RECORDS.length && !MES_REASONS.length) {
+      setStatus("已同步，表格目前是空的", "Database 與 MES異常代碼 目前沒有可讀資料。", "warn");
+      $("results").className = "empty";
+      $("results").textContent = "Google Sheets 尚未填入資料。";
+    } else {
+      setStatus("同步完成", `Database ${DB_RECORDS.length} 筆，MES異常代碼 ${MES_REASONS.length} 筆。`, "ok");
+      $("results").className = "empty";
+      $("results").textContent = "選擇條件後按查詢。";
     }
+  } catch (error) {
+    setStatus("同步失敗", error.message || "無法讀取 Google Sheets。", "bad");
+    $("results").className = "empty";
+    $("results").textContent = "請確認 Google Sheets 分享權限為知道連結的任何人可檢視。";
+  }
+}
+
+function getField(row, keys) {
+  for (const key of keys) {
+    if (row[key] !== undefined && String(row[key]).trim()) return row[key];
+  }
+  return "";
+}
+
+function dateMatch(recordDate, selectedDate) {
+  if (!selectedDate) return true;
+  if (!recordDate) return false;
+  const value = String(recordDate).trim().replaceAll("/", "-");
+  return value === selectedDate || value.startsWith(selectedDate);
+}
+
+function containsAny(haystack, needles) {
+  const target = clean(haystack);
+  return needles.some((needle) => {
+    const key = clean(needle);
+    return key && (target.includes(key) || key.includes(target));
+  });
+}
+
+function reasonMatch(row, selectedReason) {
+  if (!selectedReason) return true;
+  const rowReason = getField(row, ["降規原因", "異常名稱", "中文名稱", "原因"]);
+  const candidates = [
+    selectedReason.異常代碼,
+    selectedReason.MES代碼,
+    selectedReason.代碼,
+    selectedReason.中文名稱,
+    selectedReason.異常名稱,
+    selectedReason.降規原因,
+    selectedReason.英文名稱,
+    selectedReason.English
+  ].filter(Boolean);
+  return containsAny(rowReason, candidates);
+}
+
+function searchData() {
+  const selectedReason = $("reason").value === "" ? null : MES_REASONS[Number($("reason").value)];
+  const filters = {
+    line: $("line").value,
+    date: $("date").value,
+    shift: $("shift").value,
+    grade: $("grade").value,
+    keyword: clean($("keyword").value)
+  };
+
+  const rows = DB_RECORDS.filter((row) => {
+    if (filters.line && norm(getField(row, ["線別", "Line"])) !== norm(filters.line)) return false;
+    if (!dateMatch(getField(row, ["日期", "Date"]), filters.date)) return false;
+    if (filters.shift && norm(getField(row, ["班別", "Shift"])) !== norm(filters.shift)) return false;
+    if (filters.grade && !containsAny(getField(row, ["模組等級", "等級", "Grade"]), [filters.grade])) return false;
+    if (!reasonMatch(row, selectedReason)) return false;
+    if (filters.keyword && !clean(Object.values(row).join(" ")).includes(filters.keyword)) return false;
+    return true;
+  });
+
+  $("matched").textContent = rows.length;
+  $("currentReason").textContent = selectedReason ? reasonLabel(selectedReason) : "全部";
+  render(rows);
+}
+
+function esc(value) {
+  return String(value || "").replace(/[&<>"]/g, (match) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;"
+  }[match]));
+}
+
+function render(rows) {
+  const box = $("results");
+  if (!rows.length) {
+    box.className = "empty";
+    box.textContent = DB_RECORDS.length ? "查無符合資料。" : "Google Sheets 尚未填入資料。";
+    return;
+  }
+
+  box.className = "";
+  box.innerHTML = rows.slice(0, 300).map((row, index) => {
+    const reason = getField(row, ["降規原因", "異常名稱", "中文名稱", "原因"]);
+    const analysis = getField(row, ["異常分析", "分析", "處置", "說明"]);
+    const rootCause = getField(row, ["異常root cause", "root cause", "Root Cause", "原因分析"]);
+    const phenomenon = getField(row, ["現象描述", "現象", "描述"]);
+    return `
+      <article class="result">
+        <div class="reasonRow">
+          <b>#${index + 1} ${esc(reason || "未填降規原因")}</b>
+          ${tag(getField(row, ["線別", "Line"]))}
+          ${tag(getField(row, ["日期", "Date"]))}
+          ${tag(getField(row, ["班別", "Shift"]))}
+          ${tag(getField(row, ["模組等級", "等級", "Grade"]))}
+        </div>
+        <p class="small">模組序號：${esc(getField(row, ["模組序號", "序號", "SN"])) || "-"}</p>
+        <p><b>現象描述：</b>${esc(phenomenon) || "-"}</p>
+        <p><b>異常 root cause：</b>${esc(rootCause) || "-"}</p>
+        <div><b>異常分析：</b><div class="analysis">${esc(analysis) || "-"}</div></div>
+      </article>
+    `;
+  }).join("") + (rows.length > 300 ? `<p class="small">僅顯示前 300 筆，請縮小查詢條件。</p>` : "");
+}
+
+function tag(value) {
+  return value ? `<span class="tag">${esc(value)}</span>` : "";
+}
+
+function resetForm() {
+  ["line", "date", "shift", "grade", "reason", "keyword"].forEach((id) => { $(id).value = ""; });
+  $("matched").textContent = "0";
+  $("currentReason").textContent = "全部";
+  $("results").className = "empty";
+  $("results").textContent = DB_RECORDS.length ? "選擇條件後按查詢。" : "Google Sheets 尚未填入資料。";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("loginBtn").addEventListener("click", login);
+  $("logoutBtn").addEventListener("click", logout);
+  $("reloadBtn").addEventListener("click", syncSheets);
+  $("searchBtn").addEventListener("click", searchData);
+  $("resetBtn").addEventListener("click", resetForm);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && $("loginPage").style.display !== "none") login();
+  });
+  checkAuth();
 });
-
-
-const $=id=>document.getElementById(id);
-
-function norm(v){
-    return String(v||'').trim().toLowerCase();
-}
-
-function clean(v){
-    return norm(v)
-        .replace(/[\s\u3000]/g,'')
-        .replace(/[\/\\\-＿_]/g,'')
-        .replace(/[()（）【】\[\]{}<>《》]/g,'')
-        .replace(/[:：;；,，.。|｜+＋&＆]/g,'');
-}
-
-const REASON_ALIASES = {
-    "cell隱破裂": [
-        "cell隱破裂",
-        "cell隱破",
-        "cell破裂",
-        "cell隱/破裂",
-        "cell crack",
-        "cellcrack"
-    ],
-    "背面ribbon歪斜": [
-        "背面ribbon歪斜",
-        "ribbon歪斜",
-        "backside ribbon shift",
-        "backsideribbonshift",
-        "ribbon shift",
-        "ribbonshift"
-    ],
-    "背面異物": [
-        "背面異物",
-        "背面 foreign materials",
-        "backside foreign materials",
-        "backsideforeignmaterials"
-    ],
-    "電池非電池區異物": [
-        "電池非電池區異物",
-        "電池/非電池區異物",
-        "foreign materials",
-        "foreignmaterials"
-    ],
-    "空焊": [
-        "空焊",
-        "solder empty",
-        "solderempty"
-    ],
-    "電池非電池區氣泡": [
-        "電池非電池區氣泡",
-        "電池/非電池區氣泡",
-        "氣泡",
-        "blister in active / inactive area",
-        "blisterinactivearea",
-        "blisterinactiveactivearea"
-    ],
-    "cell缺角": [
-        "cell缺角",
-        "缺角",
-        "cell notch",
-        "cellnotch"
-    ],
-    "片間距異常": [
-        "片間距異常",
-        "間距異常",
-        "the distance between cells is ng",
-        "thedistancebetweencellsisng"
-    ],
-    "cell無效能": [
-        "cell無效能",
-        "無效能",
-        "cell has no function",
-        "cellhasnofunction"
-    ],
-    "cell來料異常": [
-        "cell來料異常",
-        "來料異常",
-        "the incoming cell is ng",
-        "incomingcellisng"
-    ],
-    "玻璃氣泡": [
-        "玻璃氣泡",
-        "glass bubble",
-        "glassbubble"
-    ],
-    "玻璃刮傷": [
-        "玻璃刮傷",
-        "glass scratch",
-        "glassscratch"
-    ],
-    "玻璃異物": [
-        "玻璃異物",
-        "glass foreign material",
-        "glassforeignmaterial"
-    ],
-    "膠膜氣泡": [
-        "膠膜氣泡",
-        "eva氣泡",
-        "poe氣泡",
-        "encapsulant bubble",
-        "evabubble",
-        "poebubble"
-    ],
-    "膠膜異物": [
-        "膠膜異物",
-        "eva異物",
-        "poe異物",
-        "encapsulant foreign material",
-        "evaforeignmaterial",
-        "poeforeignmaterial"
-    ],
-    "錫珠": [
-        "錫珠",
-        "solder ball",
-        "solderball"
-    ],
-    "錫絲": [
-        "錫絲",
-        "solder wire",
-        "solderwire"
-    ],
-    "助焊劑殘留": [
-        "助焊劑殘留",
-        "flux residue",
-        "fluxresidue"
-    ],
-    "匯流條歪斜": [
-        "匯流條歪斜",
-        "busbar歪斜",
-        "busbar shift",
-        "busbarshift"
-    ],
-    "匯流條異常": [
-        "匯流條異常",
-        "busbar異常",
-        "busbar ng",
-        "busbarng"
-    ],
-    "鋁框來料異常": [
-        "鋁框來料異常",
-        "鋁框來料",
-        "aluminum frame incoming",
-        "abnormal aluminum frame from incoming"
-    ]
-};
-
-function variants(v){
-    const base = clean(v);
-    const set = new Set();
-    if(base) set.add(base);
-
-    Object.entries(REASON_ALIASES).forEach(([main, list])=>{
-        const mainKey = clean(main);
-        const aliasKeys = list.map(clean).filter(Boolean);
-
-        const hit = aliasKeys.some(alias =>
-            base === alias ||
-            base.includes(alias) ||
-            alias.includes(base)
-        );
-
-        if(hit){
-            set.add(mainKey);
-            aliasKeys.forEach(alias=>set.add(alias));
-        }
-    });
-
-    return [...set].filter(Boolean);
-}
-
-function fuzzyHit(a,b){
-    if(!a || !b) return false;
-
-    const av = variants(a);
-    const bv = variants(b);
-
-    return av.some(x =>
-        bv.some(y =>
-            x === y ||
-            x.includes(y) ||
-            y.includes(x)
-        )
-    );
-}
-
-function reasonMatch(recordReason,selected){
-    if(!selected) return true;
-
-    const fields = [
-        selected.中文名稱,
-        selected.英文名稱,
-        selected.異常代碼
-    ];
-
-    return fields.some(field => fuzzyHit(recordReason, field)) ||
-           fuzzyHit(recordReason, fields.join(' '));
-}
-
-function dateMatch(recordDate,selectedDate){
-    if(!selectedDate) return true;
-    if(!recordDate) return false;
-
-    const r = String(recordDate).trim().replaceAll('/','-');
-    return r === selectedDate || r.startsWith(selectedDate);
-}
-
-function gradeMatch(recordGrade,selectedGrade){
-    if(!selectedGrade) return true;
-
-    const g = clean(recordGrade);
-    const s1 = clean(selectedGrade);
-    const s2 = clean(selectedGrade.replace('規',''));
-
-    return g === s1 || g === s2 || g.includes(s2);
-}
-
-function init(){
-    const sel=$('reason');
-
-    MES_REASONS.forEach((r,i)=>{
-        const o=document.createElement('option');
-        o.value=i;
-        o.textContent=`${r.異常代碼}｜${r.中文名稱}${r.英文名稱?'｜'+r.英文名稱:''}`;
-        sel.appendChild(o);
-    });
-
-    $('total').textContent=DB_RECORDS.length;
-    $('reasonCount').textContent=MES_REASONS.length;
-}
-
-function searchData(){
-    const line=$('line').value,
-          date=$('date').value,
-          shift=$('shift').value,
-          grade=$('grade').value,
-          kw=norm($('keyword').value);
-
-    const selected=$('reason').value===''?null:MES_REASONS[Number($('reason').value)];
-
-    $('currentReason').textContent=selected?selected.中文名稱:'全部';
-
-    const rows=DB_RECORDS.filter(r=>{
-        if(line && norm(r.線別)!==norm(line)) return false;
-        if(!dateMatch(r.日期,date)) return false;
-        if(shift && norm(r.班別)!==norm(shift)) return false;
-        if(!gradeMatch(r.模組等級,grade)) return false;
-        if(selected && !reasonMatch(r.降規原因,selected)) return false;
-        if(kw && !clean(Object.values(r).join(' ')).includes(clean(kw))) return false;
-
-        return true;
-    });
-
-    $('matched').textContent=rows.length;
-    render(rows);
-}
-
-function esc(s){
-    return String(s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-}
-
-function render(rows){
-    const box=$('results');
-
-    if(!rows.length){
-        box.className='empty';
-        box.innerHTML='查無符合資料。可改用「異常分析關鍵字」或放寬條件查詢。';
-        return;
-    }
-
-    box.className='';
-
-    box.innerHTML=rows.slice(0,300).map((r,i)=>`
-        <article class="result">
-            <div class="reasonRow">
-                <b>#${i+1} ${esc(r.降規原因)}</b>
-                <span class="tag">${esc(r.線別)}</span>
-                <span class="tag">${esc(r.日期)}</span>
-                <span class="tag">${esc(r.班別)}</span>
-                <span class="tag">${esc(r.模組等級)}</span>
-            </div>
-            <p class="small">
-                模組序號：${esc(r.模組序號)}
-                ｜STR：${esc(r.STR)}
-                ｜LAM：${esc(r.LAM)}
-                ｜位置：${esc(r.位置)}
-                ｜返修/Q退：${esc(r['返修/Q退'])}
-            </p>
-            <p><b>現象描述：</b>${esc(r.現象描述)||'—'}</p>
-            <p><b>異常 root cause：</b>${esc(r['異常root cause'])||'—'}</p>
-            <div>
-                <b>異常分析：</b>
-                <div class="analysis">${esc(r.異常分析)||'—'}</div>
-            </div>
-            <p><b>規格：</b>${esc(r.規格)||'—'}</p>
-        </article>
-    `).join('')+(rows.length>300?'<p class="small">僅顯示前 300 筆，請縮小查詢條件。</p>':'');
-}
-
-function resetForm(){
-    ['line','date','shift','grade','reason','keyword'].forEach(id=>$(id).value='');
-
-    $('matched').textContent='0';
-    $('currentReason').textContent='未選擇';
-    $('results').className='empty';
-    $('results').textContent='請選擇條件後按「查詢異常分析」。';
-}
-
-init();
-checkAuth();
