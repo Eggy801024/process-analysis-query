@@ -1,73 +1,72 @@
 const SHEET_ID = "1uxlACZ3sXNZoTaZjEmixYCosIj-aGViXF5pJ_Z3Z2QM";
-const DATABASE_SHEET = "Database";
+const SHEET_NAME = "Database";
 
 const fallbackData = window.APP_DATA || {};
-const staticMesReasons =
-  typeof MES_REASONS !== "undefined" ? MES_REASONS : fallbackData.reasons || [];
+const rawReasons = fallbackData.reasons || (typeof MES_REASONS !== "undefined" ? MES_REASONS : []);
+const rawFallbackRecords = fallbackData.records || (typeof DB_RECORDS !== "undefined" ? DB_RECORDS : []);
+
+const fixed = {
+  lines: ["L1", "L2", "L3", "L4", "L5"],
+  shifts: ["DA", "NA", "DB", "NB"],
+  grades: ["A規", "B規", "C規", "F規", "M規"],
+};
 
 const state = {
   line: "",
+  date: "",
   shift: "",
   grade: "",
-  date: "",
   reasonCode: "",
   analysis: "",
   searched: false,
-};
-
-const fixed = {
-  lines: ["L1", "L3", "L4", "L5"],
-  shifts: ["DA", "NA", "DB", "NB"],
-  grades: ["A規", "B規", "C規", "F規", "M規"],
 };
 
 let records = [];
 let reasons = [];
 
 const $ = (id) => document.getElementById(id);
-const text = (value) => String(value || "").trim();
-const lower = (value) => text(value).toLowerCase();
+const trim = (value) => String(value ?? "").trim();
+const lower = (value) => trim(value).toLowerCase();
 
-function compact(value) {
+function keyText(value) {
   return lower(value)
     .replace(/\s|\u3000/g, "")
     .replace(/[\/\\\-＿_()（）【】[\]{}<>《》:：;；,，.。|｜+＋&＆…]/g, "");
 }
 
 function normalizeDate(value) {
-  const raw = text(value);
+  const raw = trim(value);
   if (!raw) return "";
-  const dateMatch = raw.match(/^Date\((\d+),(\d+),(\d+)\)$/);
-  if (dateMatch) {
-    const y = Number(dateMatch[1]);
-    const m = Number(dateMatch[2]) + 1;
-    const d = Number(dateMatch[3]);
+  const match = raw.match(/^Date\((\d+),(\d+),(\d+)\)$/);
+  if (match) {
+    const y = Number(match[1]);
+    const m = Number(match[2]) + 1;
+    const d = Number(match[3]);
     return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
   const parts = raw.replaceAll("/", "-").split(" ")[0].split("-");
-  if (parts.length >= 3) {
-    const [y, m, d] = parts;
-    if (y.length === 4) {
-      return `${y}-${String(Number(m)).padStart(2, "0")}-${String(Number(d)).padStart(2, "0")}`;
-    }
+  if (parts.length >= 3 && parts[0].length === 4) {
+    return `${parts[0]}-${String(Number(parts[1])).padStart(2, "0")}-${String(Number(parts[2])).padStart(2, "0")}`;
   }
   return raw;
 }
 
 function normalizeGrade(value) {
-  const raw = text(value).toUpperCase().replace(/\s/g, "");
-  if (!raw) return "";
-  const letter = raw[0];
+  const raw = trim(value).toUpperCase();
+  const letter = raw[0] || "";
   return ["A", "B", "C", "F", "M"].includes(letter) ? `${letter}規` : raw;
 }
 
-function normalizeReasonList(input) {
-  return input.map((item, index) => ({
-    order: Number(item.order || item["序號"] || index + 1),
-    code: text(item.code || item["異常代碼"]),
-    zh: text(item.zh || item["中文名稱"]),
-    en: text(item.en || item["英文名稱"]),
-  })).filter((item) => item.code && item.zh);
+function normalizeReasons(items) {
+  return items
+    .map((item, index) => ({
+      order: Number(item.order || item["序號"] || index + 1),
+      code: trim(item.code || item["異常代碼"]),
+      zh: trim(item.zh || item["中文名稱"]),
+      en: trim(item.en || item["英文名稱"]),
+    }))
+    .filter((item) => item.code && item.zh)
+    .sort((a, b) => a.order - b.order);
 }
 
 function buildReasonMatcher(reasonList) {
@@ -75,94 +74,94 @@ function buildReasonMatcher(reasonList) {
   const byKey = new Map();
   reasonList.forEach((item) => {
     [item.code, item.zh, item.en].forEach((value) => {
-      const key = compact(value);
+      const key = keyText(value);
       if (key) byKey.set(key, item);
     });
   });
 
   const aliases = {
-    "隱破裂": "AbnTST0039",
-    "cell隱破裂": "AbnTST0039",
-    "cell隱裂": "AbnTST0039",
-    "cell破裂": "AbnTST0039",
-    "隱裂": "AbnTST0039",
-    "透光裂": "AbnTST0039",
-    "cell缺角": "AbnTST0043",
-    "缺角": "AbnTST0043",
-    "cell無效能": "AbnTST0045",
-    "無效能": "AbnTST0045",
-    "cell髒汙": "AbnTST0047",
-    "cell髒污": "AbnTST0047",
-    "cell刮痕": "AbnTST0048",
-    "空焊": "AbnTST0038",
-    "異物": "AbnTST0040",
-    "電池區異物": "AbnTST0040",
-    "非電池區異物": "AbnTST0040",
-    "電池區金屬異物": "AbnTST0040",
-    "電池區非金屬異物": "AbnTST0040",
-    "非電池區金屬異物": "AbnTST0040",
-    "背面異物": "AbnTST0133",
-    "氣泡": "AbnTST0037",
-    "電池區氣泡": "AbnTST0037",
-    "非電池區氣泡": "AbnTST0037",
-    "串間距異常": "AbnTST0050",
-    "串距異常": "AbnTST0050",
-    "片間距異常": "AbnTST0044",
-    "片距過小": "AbnTST0044",
-    "帶電體到鋁框異常": "AbnTST0052",
-    "帶電體到框異常": "AbnTST0052",
-    "玻璃來料異常": "AbnTST0053",
-    "玻璃異常": "AbnTST0053",
-    "玻璃刮傷": "AbnTST0054",
-    "eva異常": "AbnTST0056",
-    "eva來料異常": "AbnTST0057",
-    "背板來料異常": "AbnTST0059",
-    "背板髒汙": "AbnTST0060",
-    "背板髒污": "AbnTST0060",
-    "背板破裂": "AbnTST0061",
-    "背板破損": "AbnTST0061",
-    "背板凹痕": "AbnTST0062",
-    "背板凹陷": "AbnTST0062",
-    "背板反向": "AbnTST0063",
-    "背板刮傷": "AbnTST0064",
-    "背板氣泡": "AbnTST0065",
-    "cellribbon歪斜": "AbnTST0068",
-    "ribbon歪斜": "AbnTST0068",
-    "ribbon偏移": "AbnTST0068",
-    "匯流條偏移": "AbnTST0072",
-    "矩陣偏移": "AbnTST0073",
-    "模組矩陣偏移": "AbnTST0073",
-    "鋁框異常": "AbnTST0075",
-    "鋁框凹陷": "AbnTST0076",
-    "鋁框高低差": "AbnTST0077",
-    "鋁框刮傷": "AbnTST0078",
-    "鋁框變形": "AbnTST0079",
-    "鋁框來料異常": "AbnTST0134",
-    "鋁框來料刮傷": "AbnTST0134",
-    "模組破裂": "AbnTST0087",
-    "模組爆片": "AbnTST0087",
-    "爆片": "AbnTST0087",
-    "外觀不良": "AbnTST0088",
-    "其他": "AbnTST0091",
-    "其它": "AbnTST0091",
-    "網印缺陷": "AbnTST0128",
-    "網印不良": "AbnTST0128",
-    "焊接未對準": "AbnTST0131",
-    "背面ribbon歪斜": "AbnTST0132",
+    隱破裂: "AbnTST0039",
+    隱裂: "AbnTST0039",
+    透光裂: "AbnTST0039",
+    cell隱破裂: "AbnTST0039",
+    cell破裂: "AbnTST0039",
+    Cell隱破裂: "AbnTST0039",
+    Cell破裂: "AbnTST0039",
+    缺角: "AbnTST0043",
+    Cell缺角: "AbnTST0043",
+    cell缺角: "AbnTST0043",
+    無效能: "AbnTST0045",
+    cell無效能: "AbnTST0045",
+    Cell無效能: "AbnTST0045",
+    Cell髒污: "AbnTST0047",
+    Cell髒汙: "AbnTST0047",
+    空焊: "AbnTST0038",
+    異物: "AbnTST0040",
+    電池區異物: "AbnTST0040",
+    非電池區異物: "AbnTST0040",
+    背面異物: "AbnTST0133",
+    氣泡: "AbnTST0037",
+    電池區氣泡: "AbnTST0037",
+    非電池區氣泡: "AbnTST0037",
+    串間距異常: "AbnTST0050",
+    串距異常: "AbnTST0050",
+    片間距異常: "AbnTST0044",
+    片距過小: "AbnTST0044",
+    帶電體到鋁框異常: "AbnTST0052",
+    帶電體到框異常: "AbnTST0052",
+    玻璃來料異常: "AbnTST0053",
+    玻璃異常: "AbnTST0053",
+    玻璃刮傷: "AbnTST0054",
+    EVA異常: "AbnTST0056",
+    EVA來料異常: "AbnTST0057",
+    背板來料異常: "AbnTST0059",
+    背板髒污: "AbnTST0060",
+    背板髒汙: "AbnTST0060",
+    背板破裂: "AbnTST0061",
+    背板破損: "AbnTST0061",
+    背板凹痕: "AbnTST0062",
+    背板凹陷: "AbnTST0062",
+    背板反向: "AbnTST0063",
+    背板刮傷: "AbnTST0064",
+    背板氣泡: "AbnTST0065",
+    "Cell Ribbon歪斜": "AbnTST0068",
+    "Cell Ribbon 歪斜": "AbnTST0068",
+    Ribbon歪斜: "AbnTST0068",
+    Ribbon偏移: "AbnTST0068",
+    匯流條偏移: "AbnTST0072",
+    矩陣偏移: "AbnTST0073",
+    模組矩陣偏移: "AbnTST0073",
+    鋁框異常: "AbnTST0075",
+    鋁框凹陷: "AbnTST0076",
+    鋁框高低差: "AbnTST0077",
+    鋁框刮傷: "AbnTST0078",
+    鋁框變形: "AbnTST0079",
+    鋁框來料異常: "AbnTST0134",
+    鋁框來料刮傷: "AbnTST0134",
+    模組破裂: "AbnTST0087",
+    模組爆片: "AbnTST0087",
+    爆片: "AbnTST0087",
+    外觀不良: "AbnTST0088",
+    其他: "AbnTST0091",
+    其它: "AbnTST0091",
+    網印缺陷: "AbnTST0128",
+    網印不良: "AbnTST0128",
+    焊接未對準: "AbnTST0131",
+    背面ribbon歪斜: "AbnTST0132",
   };
   Object.entries(aliases).forEach(([alias, code]) => {
     const item = byCode.get(code);
-    if (item) byKey.set(compact(alias), item);
+    if (item) byKey.set(keyText(alias), item);
   });
 
   return (value) => {
-    const key = compact(value);
+    const key = keyText(value);
     if (!key) return null;
     if (byKey.has(key)) return byKey.get(key);
     const candidates = [];
     reasonList.forEach((item) => {
-      const zh = compact(item.zh);
-      const en = compact(item.en);
+      const zh = keyText(item.zh);
+      const en = keyText(item.en);
       if (zh && (key.includes(zh) || zh.includes(key))) candidates.push([zh.length, item]);
       if (en && (key.includes(en) || en.includes(key))) candidates.push([en.length, item]);
     });
@@ -171,9 +170,8 @@ function buildReasonMatcher(reasonList) {
 }
 
 function gvizUrl(sheetName, callbackName) {
-  const sheet = encodeURIComponent(sheetName);
   const tqx = `out:json;responseHandler:${callbackName}`;
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${encodeURIComponent(tqx)}&sheet=${sheet}&headers=1&t=${Date.now()}`;
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${encodeURIComponent(tqx)}&sheet=${encodeURIComponent(sheetName)}&headers=1&t=${Date.now()}`;
 }
 
 function fetchSheet(sheetName) {
@@ -195,15 +193,18 @@ function fetchSheet(sheetName) {
         reject(new Error(`Google Sheets 狀態異常：${payload.status}`));
         return;
       }
-      const cols = payload.table.cols.map((col) => text(col.label));
-      const rows = (payload.table.rows || []).map((row) => {
-        const item = {};
-        (row.c || []).forEach((cell, index) => {
-          const key = cols[index] || `欄位${index + 1}`;
-          item[key] = cell ? text(cell.f || cell.v || "") : "";
-        });
-        return item;
-      }).filter((item) => Object.values(item).some(Boolean));
+      const cols = payload.table.cols.map((col) => trim(col.label));
+      const rows = (payload.table.rows || [])
+        .map((row) => {
+          const item = {};
+          const cells = row.c || [];
+          cols.forEach((key, index) => {
+            const cell = cells[index];
+            item[key || `欄位${index + 1}`] = cell ? trim(cell.f || cell.v || "") : "";
+          });
+          return item;
+        })
+        .filter((item) => Object.values(item).some(Boolean));
       resolve(rows);
     };
     script.onerror = () => {
@@ -215,7 +216,7 @@ function fetchSheet(sheetName) {
   });
 }
 
-function buttonGroup(id, values, key) {
+function renderButtonGroup(id, values, key) {
   const wrap = $(id);
   wrap.innerHTML = "";
   ["全部", ...values].forEach((value) => {
@@ -234,9 +235,9 @@ function buttonGroup(id, values, key) {
 }
 
 function renderControls() {
-  buttonGroup("lineButtons", fixed.lines, "line");
-  buttonGroup("shiftButtons", fixed.shifts, "shift");
-  buttonGroup("gradeButtons", fixed.grades, "grade");
+  renderButtonGroup("lineButtons", fixed.lines, "line");
+  renderButtonGroup("shiftButtons", fixed.shifts, "shift");
+  renderButtonGroup("gradeButtons", fixed.grades, "grade");
 
   const reasonSelect = $("reasonFilter");
   const current = reasonSelect.value || state.reasonCode;
@@ -250,11 +251,27 @@ function renderControls() {
   reasonSelect.value = current;
 }
 
-function matchRecord(record) {
+function normalizeRows(rows) {
+  const matchReason = buildReasonMatcher(reasons);
+  return rows.map((row, index) => {
+    const item = { ...row };
+    item["日期"] = normalizeDate(row["日期"]);
+    item["等級"] = normalizeGrade(row["等級"] || row["模組等級"]);
+    item["異常root cause"] = row["異常root cause"] || row["異常root casue"] || "";
+    const reason = matchReason(row["降規原因"]);
+    item["MES代碼"] = reason?.code || "";
+    item["MES中文"] = reason?.zh || "";
+    item["MES英文"] = reason?.en || "";
+    item.id = `DB-${String(index + 1).padStart(5, "0")}`;
+    return item;
+  });
+}
+
+function recordMatches(record) {
   if (state.line && record["線別"] !== state.line) return false;
+  if (state.date && record["日期"] !== state.date) return false;
   if (state.shift && record["班別"] !== state.shift) return false;
   if (state.grade && record["等級"] !== state.grade) return false;
-  if (state.date && record["日期"] !== state.date) return false;
   if (state.reasonCode && record["MES代碼"] !== state.reasonCode) return false;
   const keyword = lower(state.analysis);
   if (keyword) {
@@ -278,11 +295,11 @@ function runSearch() {
   state.date = $("dateFilter").value;
   state.reasonCode = $("reasonFilter").value;
   state.analysis = $("analysisFilter").value;
-  renderResults(records.filter(matchRecord));
+  renderResults(records.filter(recordMatches));
 }
 
 function escapeHtml(value) {
-  return text(value)
+  return trim(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -335,13 +352,15 @@ function renderResults(rows) {
 }
 
 function resetAll() {
-  state.line = "";
-  state.shift = "";
-  state.grade = "";
-  state.date = "";
-  state.reasonCode = "";
-  state.analysis = "";
-  state.searched = false;
+  Object.assign(state, {
+    line: "",
+    date: "",
+    shift: "",
+    grade: "",
+    reasonCode: "",
+    analysis: "",
+    searched: false,
+  });
   $("dateFilter").value = "";
   $("reasonFilter").value = "";
   $("analysisFilter").value = "";
@@ -349,39 +368,22 @@ function resetAll() {
   renderResults([]);
 }
 
-function normalizeDatabaseRows(rows) {
-  const matchReason = buildReasonMatcher(reasons);
-  return rows.map((row, index) => {
-    const item = { ...row };
-    item["日期"] = normalizeDate(row["日期"]);
-    item["等級"] = normalizeGrade(row["等級"] || row["模組等級"]);
-    item["異常root cause"] = row["異常root cause"] || row["異常root casue"] || "";
-    const reason = matchReason(row["降規原因"]);
-    item["MES代碼"] = reason?.code || "";
-    item["MES中文"] = reason?.zh || "";
-    item["MES英文"] = reason?.en || "";
-    item.id = `DB-${String(index + 1).padStart(5, "0")}`;
-    return item;
-  });
-}
-
 async function init() {
-  reasons = normalizeReasonList(staticMesReasons);
+  reasons = normalizeReasons(rawReasons);
   $("totalReasons").textContent = reasons.length.toLocaleString();
   renderControls();
   renderResults([]);
 
   $("metaText").textContent = "正在讀取 Google Sheets Database";
   try {
-    const rows = await fetchSheet(DATABASE_SHEET);
-    records = normalizeDatabaseRows(rows);
-    $("totalRecords").textContent = records.length.toLocaleString();
+    const rows = await fetchSheet(SHEET_NAME);
+    records = normalizeRows(rows);
     $("metaText").textContent = `資料已同步：${records.length.toLocaleString()} 筆 Database，${reasons.length} 筆 MES 原因`;
   } catch (error) {
-    records = normalizeDatabaseRows(fallbackData.records || (typeof DB_RECORDS !== "undefined" ? DB_RECORDS : []));
-    $("totalRecords").textContent = records.length.toLocaleString();
-    $("metaText").textContent = `Google Sheets 讀取失敗，已使用備援資料：${error.message}`;
+    records = normalizeRows(rawFallbackRecords);
+    $("metaText").textContent = `Google Sheets 讀取失敗，使用備援資料：${error.message}`;
   }
+  $("totalRecords").textContent = records.length.toLocaleString();
 
   $("dateFilter").addEventListener("change", runSearch);
   $("reasonFilter").addEventListener("change", runSearch);
