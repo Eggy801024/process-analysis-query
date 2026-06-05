@@ -2,78 +2,87 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>製程異常分析查詢</title>
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="loginPage" class="login-page">
-    <section class="login-card">
-      <h1>製程異常分析系統</h1>
-      <p>使用工號登入後查閱資料。</p>
-      <label for="loginUser">工號</label>
-      <input id="loginUser" autocomplete="username" placeholder="例如：P1339">
-      <label for="loginPass">密碼</label>
-      <input id="loginPass" type="password" autocomplete="current-password" placeholder="請輸入密碼">
-      <div class="btns">
-        <button class="primary" id="loginBtn" type="button">登入</button>
-      </div>
-      <div id="loginError" class="login-error">工號或密碼錯誤</div>
-    </section>
-  </div>
-
-  <div id="appPage" class="app-page">
-    <header>
-      <div class="wrap topbar">
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">YS</div>
         <div>
-          <h1>製程異常分析查詢</h1>
-          <p>資料來源：Google Sheets 即時同步</p>
-        </div>
-        <div class="account-box">
-          <span class="user-badge">目前登入：<span id="currentUser">-</span></span>
-          <button class="logout-btn" id="logoutBtn" type="button">登出</button>
+          <h1>製程異常分析</h1>
+          <p>Database / MES 代碼查詢</p>
         </div>
       </div>
-    </header>
+      <div class="sidebar-stat">
+        <span>資料筆數</span>
+        <strong id="totalRecords">0</strong>
+      </div>
+      <div class="sidebar-stat">
+        <span>MES 原因</span>
+        <strong id="totalReasons">0</strong>
+      </div>
+      <div class="hint">選定日期、班別、等級與降規原因後，右側會列出所有對應異常分析。</div>
+    </aside>
 
-    <main class="wrap">
-      <section class="panel status-panel">
+    <main class="main">
+      <header class="topbar">
         <div>
-          <b id="syncTitle">讀取資料中</b>
-          <span id="syncText">正在連線 Google Sheets。</span>
+          <h2>異常分析查詢</h2>
+          <p id="metaText">資料載入中</p>
         </div>
-        <button class="ghost" id="reloadBtn" type="button">重新同步</button>
+        <button id="resetAll" type="button" class="ghost">清除條件</button>
+      </header>
+
+      <section class="filters" aria-label="查詢條件">
+        <div class="filter-group">
+          <label>線別</label>
+          <div id="lineButtons" class="segmented"></div>
+        </div>
+        <div class="filter-group">
+          <label>日期</label>
+          <input id="dateFilter" type="date">
+        </div>
+        <div class="filter-group">
+          <label>班別</label>
+          <div id="shiftButtons" class="segmented"></div>
+        </div>
+        <div class="filter-group">
+          <label>模組等級</label>
+          <div id="gradeButtons" class="segmented"></div>
+        </div>
+        <div class="filter-group wide">
+          <label>降規原因</label>
+          <select id="reasonFilter"></select>
+        </div>
+        <div class="filter-group wide">
+          <label>異常分析</label>
+          <input id="analysisFilter" type="search" placeholder="輸入分析關鍵字、模組序號、root cause">
+        </div>
+        <div class="actions">
+          <button id="searchButton" class="primary" type="button">查詢</button>
+        </div>
       </section>
 
-      <section class="panel">
-        <div class="grid">
-          <div><label for="line">線別</label><select id="line"><option value="">全部</option></select></div>
-          <div><label for="date">日期</label><input id="date" type="date"></div>
-          <div><label for="shift">班別</label><select id="shift"><option value="">全部</option></select></div>
-          <div><label for="grade">模組等級</label><select id="grade"><option value="">全部</option></select></div>
-          <div><label for="reason">降規原因</label><select id="reason"><option value="">全部 MES 原因</option></select></div>
-          <div><label for="keyword">關鍵字</label><input id="keyword" placeholder="分析、現象、root cause、模組序號"></div>
-        </div>
-        <div class="btns">
-          <button class="primary" id="searchBtn" type="button">查詢</button>
-          <button class="ghost" id="resetBtn" type="button">清除</button>
-        </div>
+      <section class="summary">
+        <div><span>符合筆數</span><strong id="matchedCount">0</strong></div>
+        <div><span>目前日期</span><strong id="currentDate">全部</strong></div>
+        <div><span>目前原因</span><strong id="currentReason">全部</strong></div>
       </section>
 
-      <section class="panel summary">
-        <div class="kpi"><span>資料筆數</span><b id="total">0</b></div>
-        <div class="kpi"><span>符合筆數</span><b id="matched">0</b></div>
-        <div class="kpi"><span>MES 原因數</span><b id="reasonCount">0</b></div>
-        <div class="kpi"><span>目前原因</span><b id="currentReason">全部</b></div>
-      </section>
-
-      <section class="panel">
-        <h2>查詢結果</h2>
-        <div id="results" class="empty">資料同步完成後即可查詢。</div>
+      <section class="results-panel">
+        <div class="panel-head">
+          <h3>查詢結果</h3>
+          <span id="resultNote">請選擇條件後查詢</span>
+        </div>
+        <div id="results" class="results empty">尚未查詢</div>
       </section>
     </main>
   </div>
 
-  <script src="app.js?v=6"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

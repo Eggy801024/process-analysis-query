@@ -2,34 +2,16 @@
 
 製程異常分析查詢網站。
 
+## 功能
+
+- 依線別、日期、班別、模組等級、MES 降規原因查詢
+- 降規原因選項來自 MES 異常代碼資料
+- 查詢結果顯示 `database.xlsx` 內對應的所有異常分析
+- 英文 MES 名稱比對不分大小寫
+
 ## 資料來源
 
-網站會直接讀取 Google Sheets：
+- `Database`：從 Google Sheets 即時讀取
+- `MES_REASONS`：由 `MES_異常代碼_依照片順序_新版.xlsx` 匯出到 `data.js`
 
-- `Database`
-- `MES_Cold`
-
-Google Sheets ID：
-
-```text
-1uxlACZ3sXNZoTaZjEmixYCosIj-aGViXF5pJ_Z3Z2QM
-```
-
-## 登入帳號
-
-- `P1339 / P1339`
-- `P0949 / P0949`
-
-## 欄位建議
-
-`MES_Cold`
-
-```text
-異常代碼, 中文名稱, 英文名稱, 分類, 站點, 備註
-```
-
-`Database`
-
-```text
-日期, 線別, 班別, 模組等級, 降規原因, 模組序號, 現象描述, 異常root cause, 異常分析
-```
+網站是純前端靜態頁，可直接用 GitHub Pages 發佈。
