@@ -18,11 +18,14 @@ const state = {
   grade: "",
   reasonCode: "",
   analysis: "",
+  page: 1,
   searched: false,
 };
 
 let records = [];
 let reasons = [];
+
+const PAGE_SIZE = 300;
 
 const $ = (id) => document.getElementById(id);
 const trim = (value) => String(value ?? "").trim();
@@ -227,6 +230,7 @@ function renderButtonGroup(id, values, key) {
     button.className = state[key] === actual ? "active" : "";
     button.addEventListener("click", () => {
       state[key] = state[key] === actual ? "" : actual;
+      state.page = 1;
       renderControls();
       runSearch();
     });
@@ -290,8 +294,9 @@ function recordMatches(record) {
   return true;
 }
 
-function runSearch() {
+function runSearch(page = 1) {
   state.searched = true;
+  state.page = page;
   state.date = $("dateFilter").value;
   state.reasonCode = $("reasonFilter").value;
   state.analysis = $("analysisFilter").value;
@@ -312,24 +317,31 @@ function renderResults(rows) {
   $("currentDate").textContent = state.date || "全部";
   const selectedReason = reasons.find((item) => item.code === state.reasonCode);
   $("currentReason").textContent = selectedReason ? selectedReason.zh : "全部";
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  state.page = Math.min(Math.max(1, state.page), pageCount);
+  const start = (state.page - 1) * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, rows.length);
   $("resultNote").textContent = state.searched
-    ? `顯示 ${rows.length.toLocaleString()} 筆，最多列出 300 筆`
+    ? `符合 ${rows.length.toLocaleString()} 筆，目前顯示第 ${(start + 1).toLocaleString()}-${end.toLocaleString()} 筆`
     : "請選擇條件後查詢";
 
   const target = $("results");
+  const pager = $("pagination");
   if (!state.searched) {
     target.className = "results empty";
     target.textContent = "尚未查詢";
+    pager.innerHTML = "";
     return;
   }
   if (!rows.length) {
     target.className = "results empty";
     target.textContent = "沒有符合條件的異常分析";
+    pager.innerHTML = "";
     return;
   }
 
   target.className = "results";
-  target.innerHTML = rows.slice(0, 300).map((record) => `
+  target.innerHTML = rows.slice(start, end).map((record) => `
     <article class="result">
       <div class="result-title">
         <strong>${escapeHtml(record["模組序號"] || "無模組序號")}</strong>
@@ -349,6 +361,53 @@ function renderResults(rows) {
       <div class="analysis">${escapeHtml(record["異常分析"] || "無異常分析內容")}</div>
     </article>
   `).join("");
+  renderPagination(pageCount);
+}
+
+function renderPagination(pageCount) {
+  const pager = $("pagination");
+  if (pageCount <= 1) {
+    pager.innerHTML = "";
+    return;
+  }
+
+  const visiblePages = getVisiblePages(state.page, pageCount);
+  pager.innerHTML = `
+    <button type="button" data-page="1" ${state.page === 1 ? "disabled" : ""}>第一頁</button>
+    <button type="button" data-page="${state.page - 1}" ${state.page === 1 ? "disabled" : ""}>上一頁</button>
+    ${visiblePages.map((page) => (
+      page === "..."
+        ? `<span class="page-gap">...</span>`
+        : `<button type="button" data-page="${page}" class="${page === state.page ? "active" : ""}">${page}</button>`
+    )).join("")}
+    <button type="button" data-page="${state.page + 1}" ${state.page === pageCount ? "disabled" : ""}>下一頁</button>
+    <button type="button" data-page="${pageCount}" ${state.page === pageCount ? "disabled" : ""}>最後一頁</button>
+  `;
+
+  pager.querySelectorAll("button[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextPage = Number(button.dataset.page);
+      if (!Number.isNaN(nextPage)) {
+        runSearch(nextPage);
+        document.querySelector(".results-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  });
+}
+
+function getVisiblePages(currentPage, pageCount) {
+  const pages = new Set([1, pageCount]);
+  for (let page = currentPage - 2; page <= currentPage + 2; page += 1) {
+    if (page >= 1 && page <= pageCount) pages.add(page);
+  }
+
+  const sorted = [...pages].sort((a, b) => a - b);
+  const visible = [];
+  sorted.forEach((page, index) => {
+    if (index > 0 && page - sorted[index - 1] > 1) visible.push("...");
+    visible.push(page);
+  });
+  return visible;
 }
 
 function resetAll() {
@@ -359,6 +418,7 @@ function resetAll() {
     grade: "",
     reasonCode: "",
     analysis: "",
+    page: 1,
     searched: false,
   });
   $("dateFilter").value = "";
@@ -385,12 +445,12 @@ async function init() {
   }
   $("totalRecords").textContent = records.length.toLocaleString();
 
-  $("dateFilter").addEventListener("change", runSearch);
-  $("reasonFilter").addEventListener("change", runSearch);
+  $("dateFilter").addEventListener("change", () => runSearch(1));
+  $("reasonFilter").addEventListener("change", () => runSearch(1));
   $("analysisFilter").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") runSearch();
+    if (event.key === "Enter") runSearch(1);
   });
-  $("searchButton").addEventListener("click", runSearch);
+  $("searchButton").addEventListener("click", () => runSearch(1));
   $("resetAll").addEventListener("click", resetAll);
 }
 
